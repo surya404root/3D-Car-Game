@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D CAR GAME</title>
+<style>
+body{margin:0;overflow:hidden;background:#000;}
+#ui{position:absolute;top:10px;left:10px;color:white;font-size:16px;z-index:10;}
+#controls{
+  position:absolute;
+  bottom:20px;
+  width:100%;
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  z-index:10;
+}
+.btn{
+  width:80px;
+  height:80px;
+  border-radius:50%;
+  background:#444;
+  color:white;
+  font-size:30px;
+  border:none;
+  opacity:.8;
+  touch-action:none;
+  cursor:pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#restartBtn{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%, -50%);
+  padding:20px 40px;
+  font-size:24px;
+  background:red;
+  color:white;
+  border:none;
+  border-radius:10px;
+  display:none;
+  z-index:20;
+  cursor:pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+</style>
+</head>
+<body>
+<div id="ui">Score:0 | Coins:0 | Fuel:100</div>
+<div id="controls">
+  <button class="btn" id="left">⬅</button>
+  <button class="btn" id="boost">💨</button>
+  <button class="btn" id="right">➡</button>
+</div>
+<button id="restartBtn">RESTART</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+
+// --- GAME VARIABLES ---
+let score=0, coins=0, fuel=100, speed=0.3;
+let movingLeft=false, movingRight=false, boosting=false;
+let gameOver=false;
+
+// --- SCENE & CAMERA ---
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000,0.002);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0,5,15);
+
+// --- RENDERER ---
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- LIGHTS ---
+const dirLight = new THREE.DirectionalLight(0xffffff,1);
+dirLight.position.set(10,20,10);
+scene.add(dirLight);
+scene.add(new THREE.AmbientLight(0x404040));
+
+// --- LONG ROAD ---
+const roadLength = 2000;
+const roadGeo = new THREE.PlaneGeometry(10, roadLength, 1, 50);
+const roadMat = new THREE.MeshStandardMaterial({color:0x111111});
+const road = new THREE.Mesh(roadGeo, roadMat);
+road.rotation.x=-Math.PI/2;
+road.position.z=-roadLength/2;
+scene.add(road);
+
+// --- PLAYER CAR ---
+const carGeom = new THREE.BoxGeometry(1,0.5,2);
+const carMat = new THREE.MeshStandardMaterial({color:0x00ffff});
+const playerCar = new THREE.Mesh(carGeom, carMat);
+playerCar.position.y = 0.25;
+scene.add(playerCar);
+
+// --- ENVIRONMENT OBJECTS ---
+let coins3D=[], enemies3D=[], trees3D=[], fuel3D=[];
+
+// --- SPAWN TREES (AS ENEMIES) ---
+function spawnTree(){
+  const geom = new THREE.ConeGeometry(Math.random()*0.5+0.3, Math.random()*2+1, 6);
+  const mat = new THREE.MeshStandardMaterial({color:0x00ff00});
+  const tree = new THREE.Mesh(geom, mat);
+  tree.position.set((Math.random()-0.5)*8,1,playerCar.position.z-50);
+  scene.add(tree);
+  trees3D.push(tree);
+  setTimeout(spawnTree, 1000);
+}
+spawnTree();
+
+// --- SPAWN COINS ---
+function spawnCoin(){
+  const geom = new THREE.TorusGeometry(0.3,0.1,8,16);
+  const mat = new THREE.MeshStandardMaterial({color:0xffd700});
+  const coin = new THREE.Mesh(geom, mat);
+  coin.position.set((Math.random()-0.5)*8,0.5,playerCar.position.z-50);
+  scene.add(coin);
+  coins3D.push(coin);
+  setTimeout(spawnCoin, 1500);
+}
+spawnCoin();
+
+// --- SPAWN ENEMIES (RED BOXES) ---
+function spawnEnemy(){
+  const count = Math.floor(Math.random()*2)+1; // 2-3 enemies per spawn
+  for(let j=0;j<count;j++){
+    const geom = new THREE.BoxGeometry(1,0.5,2);
+    const mat = new THREE.MeshStandardMaterial({color:0xff0000});
+    const enemy = new THREE.Mesh(geom, mat);
+    enemy.position.set((Math.random()-0.5)*8,0.25,playerCar.position.z-50 - j*5);
+    scene.add(enemy);
+    enemies3D.push(enemy);
+  }
+  setTimeout(spawnEnemy, 1200); // spawn faster
+}
+spawnEnemy();
+
+// --- SPAWN FUEL ---
+function spawnFuel(){
+  const geom = new THREE.CylinderGeometry(0.3,0.3,0.5,16);
+  const mat = new THREE.MeshStandardMaterial({color:0xffa500});
+  const fuelCan = new THREE.Mesh(geom, mat);
+  fuelCan.position.set((Math.random()-0.5)*8, 0.25, playerCar.position.z - 50);
+  scene.add(fuelCan);
+  fuel3D.push(fuelCan);
+  setTimeout(spawnFuel, 5000);
+}
+spawnFuel();
+
+// --- INPUT ---
+document.addEventListener("keydown", e=>{
+  if(e.key==="ArrowLeft") movingLeft=true;
+  if(e.key==="ArrowRight") movingRight=true;
+  if(e.key===" ") boosting=true;
+});
+document.addEventListener("keyup", e=>{
+  if(e.key==="ArrowLeft") movingLeft=false;
+  if(e.key==="ArrowRight") movingRight=false;
+  if(e.key===" ") boosting=false;
+});
+
+// --- BUTTON EVENTS ---
+document.getElementById("left").addEventListener("pointerdown", ()=> movingLeft=true);
+document.getElementById("left").addEventListener("pointerup", ()=> movingLeft=false);
+document.getElementById("right").addEventListener("pointerdown", ()=> movingRight=true);
+document.getElementById("right").addEventListener("pointerup", ()=> movingRight=false);
+document.getElementById("boost").addEventListener("pointerdown", ()=> boosting=true);
+document.getElementById("boost").addEventListener("pointerup", ()=> boosting=false);
+
+// --- RESTART BUTTON ---
+const restartBtn = document.getElementById("restartBtn");
+restartBtn.addEventListener("click", restartGame);
+
+function restartGame(){
+  score=0; coins=0; fuel=100; gameOver=false;
+  movingLeft=false; movingRight=false; boosting=false;
+  playerCar.position.set(0,0.25,0);
+
+  coins3D.forEach(c=>scene.remove(c));
+  enemies3D.forEach(e=>scene.remove(e));
+  trees3D.forEach(t=>scene.remove(t));
+  fuel3D.forEach(f=>scene.remove(f));
+
+  coins3D=[]; enemies3D=[]; trees3D=[]; fuel3D=[];
+
+  restartBtn.style.display="none";
+  animate();
+}
+
+// --- COLLISION ---
+function collide(a,b){
+  const dx=Math.abs(a.position.x-b.position.x);
+  const dz=Math.abs(a.position.z-b.position.z);
+  return dx<1 && dz<2;
+}
+
+// --- UPDATE FUEL PICKUPS ---
+function updateFuelPickups(){
+  fuel3D.forEach((f,i)=>{
+    f.position.z += speed;
+    if(collide(playerCar,f)){
+      fuel = Math.min(fuel + 30, 100);
+      scene.remove(f);
+      fuel3D.splice(i,1);
+    }
+  });
+}
+
+// --- GAME OVER HANDLER ---
+function gameOverDetected(){
+  gameOver=true;
+  document.getElementById("ui").innerHTML="GAME OVER! Score: "+score;
+  restartBtn.style.display="block";
+}
+
+// --- ANIMATE ---
+function animate(){
+  if(gameOver) return;
+  requestAnimationFrame(animate);
+
+  // PLAYER MOVE
+  if(movingLeft && playerCar.position.x>-4) playerCar.position.x -=0.15;
+  if(movingRight && playerCar.position.x<4) playerCar.position.x +=0.15;
+  if(boosting) playerCar.position.z -=0.6; else playerCar.position.z -=speed;
+
+  // CAMERA FOLLOW
+  camera.position.z = playerCar.position.z + 15;
+  camera.position.x = playerCar.position.x;
+  camera.lookAt(playerCar.position.x,0,playerCar.position.z);
+
+  // MOVE COINS
+  coins3D.forEach((c,i)=>{
+    c.position.z += speed;
+    if(collide(playerCar,c)){coins++; score++; scene.remove(c); coins3D.splice(i,1);}
+  });
+
+  // MOVE ENEMIES
+  enemies3D.forEach((e,i)=>{
+    e.position.z += speed;
+    if(collide(playerCar,e)){ gameOverDetected(); }
+  });
+
+  // MOVE TREES & COLLISION (now enemies too)
+  trees3D.forEach(t=>{
+    t.position.z += speed;
+    if(collide(playerCar,t)){ gameOverDetected(); }
+  });
+
+  // MOVE FUEL
+  updateFuelPickups();
+
+  // FUEL DRAIN
+  fuel -= 0.02;
+  if(fuel <=0) gameOverDetected();
+
+  document.getElementById("ui").innerHTML=`Score:${score} | Coins:${coins} | Fuel:${Math.floor(fuel)}`;
+
+  renderer.render(scene,camera);
+}
+animate();
+
+</script>
+</body>
+</html>
