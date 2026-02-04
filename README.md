@@ -1,7 +1,5 @@
 # 3D Car Game 🚗
 
-A simple and fun **3D Car Game** built using HTML/CSS/JavaScript (front-end) and Python (backend script). This project lets players control a car in a 3D environment within the browser. 🎮
-
 ## 🧠 About
 
 This repository contains the full source code for a 3D Car Game that runs in the browser. It includes:
